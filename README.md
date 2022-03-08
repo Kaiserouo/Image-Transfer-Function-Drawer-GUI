@@ -19,7 +19,7 @@ We will have to design transfer functions to manipulate an image's intensity val
 
 Although transfer functions is often designed and calculated by a predetermined & mechanical approach (e.g. linear scaling & clipping, power-law, logarithmic point transformation, etc), one may need to find your custom transfer function. Since trying out loads of predetermined transfer function is quite tedious and you may still not know what function suits you best, this GUI is here for your help.
 
-Basically, this GUI can let you "draw" any piecewise-linear transfer function (or rubber-band transfer function, if you prefer). The result image will immediately be shown in a window `Image`, while the original image is shown in window `OriginalImage` for your reference.
+Basically, **this GUI can let you "draw" any piecewise-linear transfer function** (or rubber-band transfer function, if you prefer). The result image will immediately be shown in a window `Image`, while the original image is shown in window `OriginalImage` for your reference.
 This is to help you to understand what kind of transfer function you need, by playing with simple, piecewise-linear functions first. For example, when you play around with (or draw) different transfer functions, you may find out that adding contrast to intensity range 50~70 is beneficial, then you can design or find other functions that utilize this fact.
 
 But since piecewise linear transfer function can simulate any transfer function if you add enough inflection points, you could use the result image as your final result too, to avoid the necessity of designing a matching transfer function.
