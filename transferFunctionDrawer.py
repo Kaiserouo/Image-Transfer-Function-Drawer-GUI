@@ -24,22 +24,27 @@ parser.add_argument("--input", help="Image to apply transfer function", required
 parser.add_argument("--output", help="Output path of saved image", required=True)
 args = parser.parse_args()
 
-# check path
-if not Path(args.input).is_file():
-    print('Given path is not directory')
-    exit(1)
-
 input_path = Path(args.input)
 output_path = Path(args.output)
 
+# check if image valid
+if not Path(args.input).is_file() or cv.imread(str(input_path), cv.IMREAD_GRAYSCALE) == None:
+    print('Given input path is not a valid image.')
+    exit(1)
+
+# main class for dealing with inputs
 class TransferFunctionDrawer:
     def __init__(self, line, img):
         self.line = line
         self.coords = [(x, y) for x, y in zip(line.get_xdata(), line.get_ydata())]
+
         self.cid_click = line.figure.canvas.mpl_connect('button_press_event', self.onclick)
         self.cid_pick = line.figure.canvas.mpl_connect('pick_event', self.onpick)
         self.cid_press = line.figure.canvas.mpl_connect('key_press_event', self.onPressKey)
+
+        # for picking: since when picking, `button_press_event` will also be raised...
         self.just_picked = False
+
         self.cv_name = 'Image'
         self.cv_ori_name = 'OriginalImage'
         self.tf_img = img
@@ -52,14 +57,26 @@ class TransferFunctionDrawer:
     def onclick(self, event):
         def inRange(a, inf, sup):
             return a <= sup and a >= inf
-        if self.just_picked:    # avoid simultaneous pick & click event, note pick is always first
+        
+        # avoid simultaneous pick & click event, note that pick will always be first
+        if self.just_picked:    
             self.just_picked = False
             return
+
         if event.inaxes != self.line.axes: 
             return
+
+        # avoid out-of-bound inflection points.
+        # that include rendering (0, 0), (255, 255) not being the first & last point of self.coords.
+        # however this won't avoid the case that 2 inflection points having the same x-value
+        # which is a somewhat undefined behavior if their y-value are also different...
         if not inRange(int(event.xdata), 1, 254) or not inRange(int(event.ydata), 0, 255):
             return
+
         self.coords.append((int(event.xdata), int(event.ydata)))
+
+        # must draw from small x points to large x points
+        # also required for updateImage::makePiecewiseLinearTF
         self.coords = sorted(self.coords, key=lambda coord: coord[0])
         self.updateLine()
         self.updateImage()
@@ -67,8 +84,11 @@ class TransferFunctionDrawer:
     
     def onpick(self, event):
         self.just_picked = True
+
+        # avoid deleting (0, 0) and (255, 255)
         if event.ind[0] in [0, len(self.coords)-1]:
             return
+
         self.coords.pop(event.ind[0])
         self.updateLine()
         self.updateImage()
@@ -83,21 +103,27 @@ class TransferFunctionDrawer:
     
     def updateImage(self):
         def applyTransferFunction(img, tf_fn):
-            # tf_fn as form of array of size 256
+            # transfer function (tf_fn) as form of array of size 256
             img = img.copy()
             for r in range(img.shape[0]):
                 for c in range(img.shape[1]):
                     img[r, c] = tf_fn[img[r, c]]
             return img
+
         def makePiecewiseLinearTF(pts):
-            # make a piecewise linear transfer function
-            # with inflection points `pts`
+            # make a piecewise linear transfer function with inflection points `pts`
+            # pts is List[Tuple(int_x, int_y)] and must be sorted by their x-values
+
+            # in case pts doesn't contain edge points ((0, 0), (255, 255)).
+            # note that if pts actually have edge points, this addition won't affect correctness
             pts = [(0, 0)] + pts + [(255, 255)]
+
             tf = [0]
             for i, j in zip(pts[:-1], pts[1:]):
                 tf.pop()
                 tf.extend(list(np.linspace(i[1], j[1], j[0]-i[0]+1)))
             return np.array(tf).astype(np.uint8)
+
         self.tf_img = applyTransferFunction(self.img, makePiecewiseLinearTF(self.coords))
         cv.imshow(self.cv_name, self.tf_img)
 
@@ -112,9 +138,8 @@ class TransferFunctionDrawer:
     def saveImage(self):
         cv.imwrite(str(output_path), self.tf_img)
         
-
 fig, ax = plt.subplots()
 ax.set_title('Transfer function:\nclick to add inflection point, click on point to remove\npress "m" to save image, press "q" to quit')
-line, = ax.plot([0, 255], [0, 255], 'o-', picker=True, pickradius=5)  # empty line
+line, = ax.plot([0, 255], [0, 255], 'o-', picker=True, pickradius=5)
 linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_GRAYSCALE))
 plt.show()
