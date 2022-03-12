@@ -22,9 +22,9 @@ description = """
 parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
 parser.add_argument("-i", "--input", help="Image to apply transfer function", required=True)
 parser.add_argument("-o", "--output", help="Output path of saved image", required=True)
-parser.add_argument("--inflect", help="Load inflection points from before. e.g. [(0, 0), (128, 32), (255, 255)].\nMust be a string")
-
-print(args)
+parser.add_argument("--inflect", help="Load inflection points from before. e.g. [(0, 0), (128, 32), (255, 255)].\n"
+                                      "Must all contained in a single string")
+args = parser.parse_args()
 
 input_path = Path(args.input)
 output_path = Path(args.output)

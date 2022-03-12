@@ -27,7 +27,7 @@ But since piecewise linear transfer function can simulate any transfer function 
 ## How to use?
 ```
 $ python transferFunctionDrawer.py -h
-usage: transferFunctionDrawer.py [-h] --input INPUT --output OUTPUT
+usage: transferFunctionDrawer.py [-h] -i INPUT -o OUTPUT [--inflect INFLECT]
 
     A GUI to draw & apply a piecewise linear transfer function to an image.
     
@@ -38,9 +38,13 @@ usage: transferFunctionDrawer.py [-h] --input INPUT --output OUTPUT
     Press "q" to exit the program.
 
 options:
-  -h, --help       show this help message and exit
-  --input INPUT    Image to apply transfer function
-  --output OUTPUT  Output path of saved image
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Image to apply transfer function
+  -o OUTPUT, --output OUTPUT
+                        Output path of saved image
+  --inflect INFLECT     Load inflection points from before. e.g. [(0, 0), (128, 32), (255, 255)].
+                        Must all contained in a single string
 ```
 
 ## Reference
