@@ -20,15 +20,17 @@ description = """
 """
 
 parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument("--input", help="Image to apply transfer function", required=True)
-parser.add_argument("--output", help="Output path of saved image", required=True)
-args = parser.parse_args()
+parser.add_argument("-i", "--input", help="Image to apply transfer function", required=True)
+parser.add_argument("-o", "--output", help="Output path of saved image", required=True)
+parser.add_argument("--inflect", help="Load inflection points from before. e.g. [(0, 0), (128, 32), (255, 255)].\nMust be a string")
+
+print(args)
 
 input_path = Path(args.input)
 output_path = Path(args.output)
 
 # check if image valid
-if not Path(args.input).is_file() or cv.imread(str(input_path), cv.IMREAD_GRAYSCALE) == None:
+if not Path(args.input).is_file() or cv.imread(str(input_path), cv.IMREAD_GRAYSCALE) is None:
     print('Given input path is not a valid image.')
     exit(1)
 
@@ -53,6 +55,10 @@ class TransferFunctionDrawer:
         cv.namedWindow(self.cv_ori_name)
         cv.imshow(self.cv_name, self.tf_img)
         cv.imshow(self.cv_ori_name, self.img)
+
+        # since may give inflection point at start, must process image at beginning
+        self.updateImage()
+        self.printCoords()
 
     def onclick(self, event):
         def inRange(a, inf, sup):
@@ -138,8 +144,20 @@ class TransferFunctionDrawer:
     def saveImage(self):
         cv.imwrite(str(output_path), self.tf_img)
         
+def loadInflectionPoints() -> tuple[list[tuple[int, int]]]:
+    # returns e.g. [[(0, 255)], [(0, 255)]], which is xs & ys.
+    def parsePts(s):
+        import json
+        return json.loads(s.replace('(', '[').replace(')', ']'))
+
+    if args.inflect is None:
+        return ([0, 255], [0, 255])
+    else:
+        pts = parsePts(args.inflect)
+        return ([x for x,y in pts], [y for x,y in pts])
+
 fig, ax = plt.subplots()
 ax.set_title('Transfer function:\nclick to add inflection point, click on point to remove\npress "m" to save image, press "q" to quit')
-line, = ax.plot([0, 255], [0, 255], 'o-', picker=True, pickradius=5)
+line, = ax.plot(*loadInflectionPoints(), 'o-', picker=True, pickradius=5)
 linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_GRAYSCALE))
 plt.show()
