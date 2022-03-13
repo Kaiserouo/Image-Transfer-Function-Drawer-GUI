@@ -15,30 +15,37 @@ description = """
     Click on transfer function to add an inflection point.
     CLick on point to remove that inflection point.
 
+    The inflection points will be printed on change to transfer function,
+    and you can store it and import by option `--inflect`
+
     Press "m" to save image to output path (set in `--output`).
     Press "q" to exit the program.
 """
 
 parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument("-i", "--input", help="Image to apply transfer function", required=True)
-parser.add_argument("-o", "--output", help="Output path of saved image", required=True)
-parser.add_argument("--inflect", help="Load inflection points from before. e.g. [(0, 0), (128, 32), (255, 255)].\n"
-                                      "Must all contained in a single string")
+parser.add_argument("-i", "--input", required=True, 
+                    help="Image to apply transfer function")
+parser.add_argument("-o", "--output", 
+                    help="Output path of saved image,\n"
+                         "if it is not set, then will not be able to save.")
+parser.add_argument("--inflect", 
+                    help="Load inflection points from before. e.g. \"[(0, 0), (128, 32), (255, 255)]\".\n"
+                         "Must all be contained in a single string, with format like above.\n"
+                         "You can directly import it if you have the previous inflection point output of program.")
+parser.add_argument("-g", "--grey", action='store_true',
+                    help="Use grey image (i.e. read by cv2.IMREAD_GRAYSCALE)\n"
+                         "Default to color version (i.e. read by cv2.IMREAD_COLOR)")
 args = parser.parse_args()
 
 input_path = Path(args.input)
-output_path = Path(args.output)
-
-# check if image valid
-if not Path(args.input).is_file() or cv.imread(str(input_path), cv.IMREAD_GRAYSCALE) is None:
-    print('Given input path is not a valid image.')
-    exit(1)
+output_path = Path(args.output) if args.output is not None else None
 
 # main class for dealing with inputs
 class TransferFunctionDrawer:
-    def __init__(self, line, img):
+    def __init__(self, line, img, apply_tf):
         self.line = line
         self.coords = [(x, y) for x, y in zip(line.get_xdata(), line.get_ydata())]
+        self.apply_tf = apply_tf
 
         self.cid_click = line.figure.canvas.mpl_connect('button_press_event', self.onclick)
         self.cid_pick = line.figure.canvas.mpl_connect('pick_event', self.onpick)
@@ -75,7 +82,7 @@ class TransferFunctionDrawer:
         # avoid out-of-bound inflection points.
         # that include rendering (0, 0), (255, 255) not being the first & last point of self.coords.
         # however this won't avoid the case that 2 inflection points having the same x-value
-        # which is a somewhat undefined behavior if their y-value are also different...
+        # which is a somewhat undefined behavior since their y-value are also different...
         if not inRange(int(event.xdata), 1, 254) or not inRange(int(event.ydata), 0, 255):
             return
 
@@ -108,14 +115,6 @@ class TransferFunctionDrawer:
         self.line.figure.canvas.draw()
     
     def updateImage(self):
-        def applyTransferFunction(img, tf_fn):
-            # transfer function (tf_fn) as form of array of size 256
-            img = img.copy()
-            for r in range(img.shape[0]):
-                for c in range(img.shape[1]):
-                    img[r, c] = tf_fn[img[r, c]]
-            return img
-
         def makePiecewiseLinearTF(pts):
             # make a piecewise linear transfer function with inflection points `pts`
             # pts is List[Tuple(int_x, int_y)] and must be sorted by their x-values
@@ -130,7 +129,8 @@ class TransferFunctionDrawer:
                 tf.extend(list(np.linspace(i[1], j[1], j[0]-i[0]+1)))
             return np.array(tf).astype(np.uint8)
 
-        self.tf_img = applyTransferFunction(self.img, makePiecewiseLinearTF(self.coords))
+        # uses self.apply_tf to get a new image, by giving transfer function
+        self.tf_img = self.apply_tf(self.img, makePiecewiseLinearTF(self.coords))
         cv.imshow(self.cv_name, self.tf_img)
 
     def onPressKey(self, event):
@@ -142,7 +142,49 @@ class TransferFunctionDrawer:
             self.saveImage()
         
     def saveImage(self):
-        cv.imwrite(str(output_path), self.tf_img)
+        if output_path is None:
+            print('[x] Cannot save image: did not specify output path.')
+        else:
+            cv.imwrite(str(output_path), self.tf_img)
+
+class GreyTransferFunctionApplier:
+    def __call__(self, img, tf_fn):
+        # transfer function (tf_fn) as form of array of size 256
+        # also this is way faster than 2 for-iterations
+        return cv.LUT(img, tf_fn)
+
+class BGRTransferFunctionApplier:
+    def __call__(self, img, tf_fn):
+        # transfer function (tf_fn) as form of array of size 256
+        # there are some approach for this
+        return self.HLSConversion(img, tf_fn)
+
+    def directLUT(self, img, tf_fn):
+        # will do LUT on 3 channels individually, and that may not be the best approach...
+        # but it looked good enough, and it is very fast
+        return cv.LUT(img, tf_fn)
+    
+    def directMultBrightness(self, img, tf_fn):
+        # i.e. direct multiply each pixel's RGB value
+        # according to how much bright difference there is.
+        # it looks good, but theoretically direct multiplication might change hue...
+        img = img.copy()
+        grey_img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        after_grey_img = cv.LUT(grey_img, tf_fn)
+        img = img.astype(float)
+        zero_mask = (grey_img == 0)
+        after_grey_img[zero_mask] = 1 # to avoid 0 divided by 0
+        grey_img[zero_mask] = 1 # to avoid 0 divided by 0
+        img = img * (after_grey_img / grey_img)[:,:,np.newaxis]
+        img[zero_mask, :] = 0
+        return np.clip(img, 0, 255).astype(np.uint8)
+
+    def HLSConversion(self, img, tf_fn):
+        # convert to HLS, adjust luminance by LUT, and convert back
+        # seems total legit and fast as heck
+        img = cv.cvtColor(img, cv.COLOR_BGR2HLS)
+        img[:, :, 1] = cv.LUT(img[:, :, 1], tf_fn)
+        return cv.cvtColor(img, cv.COLOR_HLS2BGR)
         
 def loadInflectionPoints() -> tuple[list[tuple[int, int]]]:
     # returns e.g. [[(0, 255)], [(0, 255)]], which is xs & ys.
@@ -156,8 +198,20 @@ def loadInflectionPoints() -> tuple[list[tuple[int, int]]]:
         pts = parsePts(args.inflect)
         return ([x for x,y in pts], [y for x,y in pts])
 
-fig, ax = plt.subplots()
-ax.set_title('Transfer function:\nclick to add inflection point, click on point to remove\npress "m" to save image, press "q" to quit')
-line, = ax.plot(*loadInflectionPoints(), 'o-', picker=True, pickradius=5)
-linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_GRAYSCALE))
-plt.show()
+
+if __name__ == '__main__':
+    # check if image valid
+    if not Path(args.input).is_file() or cv.imread(str(input_path), cv.IMREAD_GRAYSCALE) is None:
+        print('Given input path is not a valid image.')
+        exit(1)
+
+    fig, ax = plt.subplots()
+    ax.set_title('Transfer function:\nclick to add inflection point, click on point to remove\npress "m" to save image, press "q" to quit')
+    line, = ax.plot(*loadInflectionPoints(), 'o-', picker=True, pickradius=5)
+
+    if args.grey:
+        linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_GRAYSCALE), GreyTransferFunctionApplier())
+    else:
+        linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_COLOR), BGRTransferFunctionApplier())
+    
+    plt.show()

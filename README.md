@@ -24,15 +24,20 @@ This is to help you to understand what kind of transfer function you need, by pl
 
 But since piecewise linear transfer function can simulate any transfer function if you add enough inflection points, you could use the result image as your final result too, to avoid the necessity of designing a matching transfer function.
 
+Note that for now, intensity 0 must be mapped to 0, 255 must be mapped to 255. I think this is standard enough, but it would mean it cannot do things like brightness adjustment by multiplication (e.g. make brightness x0.5), at least not properly. You could still simulate it by putting points close to (0, 0) and (255, 255).
+
 ## How to use?
 ```
 $ python transferFunctionDrawer.py -h
-usage: transferFunctionDrawer.py [-h] -i INPUT -o OUTPUT [--inflect INFLECT]
+usage: transferFunctionDrawer.py [-h] -i INPUT [-o OUTPUT] [--inflect INFLECT] [-g]
 
     A GUI to draw & apply a piecewise linear transfer function to an image.
     
     Click on transfer function to add an inflection point.
     CLick on point to remove that inflection point.
+
+    The inflection points will be printed on change to transfer function,
+    and you can store it and import by option `--inflect`
 
     Press "m" to save image to output path (set in `--output`).
     Press "q" to exit the program.
@@ -42,9 +47,13 @@ options:
   -i INPUT, --input INPUT
                         Image to apply transfer function
   -o OUTPUT, --output OUTPUT
-                        Output path of saved image
-  --inflect INFLECT     Load inflection points from before. e.g. [(0, 0), (128, 32), (255, 255)].
-                        Must all contained in a single string
+                        Output path of saved image,
+                        if it is not set, then will not be able to save.
+  --inflect INFLECT     Load inflection points from before. e.g. "[(0, 0), (128, 32), (255, 255)]".
+                        Must all be contained in a single string, with format like above.
+                        You can directly import it if you have the previous inflection point output of program.
+  -g, --grey            Use grey image (i.e. read by cv2.IMREAD_GRAYSCALE)
+                        Default to color version (i.e. read by cv2.IMREAD_COLOR)
 ```
 
 ## Reference
