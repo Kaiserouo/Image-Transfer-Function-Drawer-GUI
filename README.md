@@ -1,6 +1,7 @@
 # Image-Transfer-Function-Drawer-GUI
 
 ![](./image/demo.png)
+![](./image/demo.mp4)
 
 ```
     A GUI to draw & apply a piecewise linear transfer function to an image.

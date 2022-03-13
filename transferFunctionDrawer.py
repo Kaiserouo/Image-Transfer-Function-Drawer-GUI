@@ -8,12 +8,16 @@ import cv2 as cv
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 
 description = """
     A GUI to draw & apply a piecewise linear transfer function to an image.
     
     Click on transfer function to add an inflection point.
     CLick on point to remove that inflection point.
+
+    Adjust the bottom slider to resize image.
+    Used for when image is too large, etc. But the saved image will be original sized.
 
     The inflection points will be printed on change to transfer function,
     and you can store it and import by option `--inflect`
@@ -42,22 +46,33 @@ output_path = Path(args.output) if args.output is not None else None
 
 # main class for dealing with inputs
 class TransferFunctionDrawer:
-    def __init__(self, line, img, apply_tf):
+    def __init__(self, line, img, apply_tf_f, resize_img_f, axsize):
         self.line = line
         self.coords = [(x, y) for x, y in zip(line.get_xdata(), line.get_ydata())]
-        self.apply_tf = apply_tf
+        self.apply_tf_f = apply_tf_f
+        self.resize_img_f = resize_img_f
 
         self.cid_click = line.figure.canvas.mpl_connect('button_press_event', self.onclick)
         self.cid_pick = line.figure.canvas.mpl_connect('pick_event', self.onpick)
         self.cid_press = line.figure.canvas.mpl_connect('key_press_event', self.onPressKey)
+
+        self.size_slider = Slider(
+            ax=axsize,
+            label='Size factor\n(only for showing)',
+            valmin=0.1,
+            valmax=3,
+            valinit=1,
+        )
+        self.size_slider.on_changed(self.onSizeChange)
 
         # for picking: since when picking, `button_press_event` will also be raised...
         self.just_picked = False
 
         self.cv_name = 'Image'
         self.cv_ori_name = 'OriginalImage'
-        self.tf_img = img
-        self.img = img
+        self.tf_img = img       # the transferred resized image
+        self.img = img          # the resized image
+        self.ori_img = img      # the actual image, with original size
         cv.namedWindow(self.cv_name)
         cv.namedWindow(self.cv_ori_name)
         cv.imshow(self.cv_name, self.tf_img)
@@ -66,6 +81,12 @@ class TransferFunctionDrawer:
         # since may give inflection point at start, must process image at beginning
         self.updateImage()
         self.printCoords()
+
+    def onSizeChange(self, factor):
+        self.tf_img = self.resize_img_f(self.ori_img, factor)
+        self.img = self.resize_img_f(self.ori_img, factor)
+        cv.imshow(self.cv_ori_name, self.img)
+        self.updateImage()
 
     def onclick(self, event):
         def inRange(a, inf, sup):
@@ -114,7 +135,7 @@ class TransferFunctionDrawer:
         self.line.set_data([i for i, j in self.coords], [j for i, j in self.coords])
         self.line.figure.canvas.draw()
     
-    def updateImage(self):
+    def applyTransferFunction(self, img):
         def makePiecewiseLinearTF(pts):
             # make a piecewise linear transfer function with inflection points `pts`
             # pts is List[Tuple(int_x, int_y)] and must be sorted by their x-values
@@ -130,7 +151,10 @@ class TransferFunctionDrawer:
             return np.array(tf).astype(np.uint8)
 
         # uses self.apply_tf to get a new image, by giving transfer function
-        self.tf_img = self.apply_tf(self.img, makePiecewiseLinearTF(self.coords))
+        return self.apply_tf_f(img, makePiecewiseLinearTF(self.coords))
+        
+    def updateImage(self):
+        self.tf_img = self.applyTransferFunction(self.img)
         cv.imshow(self.cv_name, self.tf_img)
 
     def onPressKey(self, event):
@@ -145,7 +169,9 @@ class TransferFunctionDrawer:
         if output_path is None:
             print('[x] Cannot save image: did not specify output path.')
         else:
-            cv.imwrite(str(output_path), self.tf_img)
+            # note that resizing is just a visual effect when using this program
+            # the saved image won't be resized
+            cv.imwrite(str(output_path), self.applyTransferFunction(self.ori_img))
 
 class GreyTransferFunctionApplier:
     def __call__(self, img, tf_fn):
@@ -209,9 +235,26 @@ if __name__ == '__main__':
     ax.set_title('Transfer function:\nclick to add inflection point, click on point to remove\npress "m" to save image, press "q" to quit')
     line, = ax.plot(*loadInflectionPoints(), 'o-', picker=True, pickradius=5)
 
+    # make axes for resizing
+    # the slider will be built inside linebuilder
+    plt.subplots_adjust(bottom=0.25)
+    axsize = plt.axes([0.25, 0.1, 0.65, 0.03])
+
     if args.grey:
-        linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_GRAYSCALE), GreyTransferFunctionApplier())
+        resize_img_f = lambda img, factor: cv.resize(
+            img, tuple((np.array(img.shape).astype(float) * factor).astype(int))
+        )
+        linebuilder = TransferFunctionDrawer(
+            line, cv.imread(str(input_path), cv.IMREAD_GRAYSCALE), GreyTransferFunctionApplier(),
+            resize_img_f, axsize
+        )
     else:
-        linebuilder = TransferFunctionDrawer(line, cv.imread(str(input_path), cv.IMREAD_COLOR), BGRTransferFunctionApplier())
+        resize_img_f = lambda img, factor: cv.resize(
+            img, tuple((np.array(img.shape)[::-1][1:].astype(float) * factor).astype(int))
+        )
+        linebuilder = TransferFunctionDrawer(
+            line, cv.imread(str(input_path), cv.IMREAD_COLOR), BGRTransferFunctionApplier(),
+            resize_img_f, axsize
+        )
     
     plt.show()
